@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alfred — Privacy-First AI Assistant</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="glass header">
+      <div>
+        <h1>Alfred AI Daemon</h1>
+        <p class="subtitle">Local · Privacy-First · German/English · Hermes &amp; LocalAI Ready</p>
+      </div>
+      <div class="header-controls">
+        <span id="state-badge" class="badge">IDLE</span>
+        <button id="interrupt-btn" class="btn btn-danger">STOP / FORGET IT</button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="glass card span-2">
+        <h2>Command &amp; Voice Console</h2>
+        <div class="row">
+          <input id="cmd-input" type="text" placeholder="Hey Alfred, was ist meine Steuernummer? / Merke dir: Kaffee = schwarz" />
+          <input id="passphrase-input" type="password" placeholder="Weekday Passphrase (optional)" />
+          <button id="send-btn" class="btn btn-primary">Send</button>
+        </div>
+        <div class="options-row">
+          <label><input id="wake-toggle" type="checkbox" checked /> Require Wake Word ("Hey Alfred", "Hey Alexa", "Hey Google")</label>
+          <select id="lang-select">
+            <option value="de">Deutsch (de)</option>
+            <option value="en">English (en)</option>
+          </select>
+        </div>
+        <div id="chat-log" class="log-box"></div>
+      </section>
+
+      <section class="glass card">
+        <h2>Smart Audio &amp; Beeps</h2>
+        <div class="meta" id="audio-status">Loading audio devices...</div>
+        <div class="row">
+          <button id="smart-audio-btn" class="btn">Smart Select Mic &amp; Speaker</button>
+          <button id="soundcheck-btn" class="btn">Run Soundcheck</button>
+        </div>
+      </section>
+
+      <section class="glass card">
+        <h2>System &amp; Personality</h2>
+        <div class="meta" id="sys-status">Loading telemetry...</div>
+        <div class="row">
+          <input id="personality-tone" type="text" placeholder="Tone (e.g. witty, formal)" />
+          <button id="update-personality-btn" class="btn">Update Tone</button>
+        </div>
+      </section>
+
+      <section class="glass card">
+        <h2>Persistent Memories</h2>
+        <div id="memories-list" class="list-box"></div>
+      </section>
+
+      <section class="glass card">
+        <h2>Learned Alexa-Like Skills</h2>
+        <div id="skills-list" class="list-box"></div>
+      </section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
+

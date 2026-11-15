@@ -1,0 +1,26 @@
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+
+# Local database & generated artifacts
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.wav
+*.log
+
+# IDE
+.vscode/
+.idea/
+
