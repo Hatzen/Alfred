@@ -8,6 +8,8 @@ from urllib.parse import quote
 
 import httpx
 
+from src.providers.localai import log_api_error
+
 
 @dataclass
 class SearchHit:
@@ -43,6 +45,7 @@ class KnowledgeSearchConnector:
         try:
             resp = client.get(url, headers={"User-Agent": "AlfredAssistant/1.0"})
             if resp.status_code != 200:
+                log_api_error("Wikipedia", "GET", url, status_code=resp.status_code, detail=resp.text)
                 return None
             data = resp.json()
             extract = str(data.get("extract", "")).strip()
@@ -58,7 +61,8 @@ class KnowledgeSearchConnector:
                 url=str(page_url),
                 source=f"wikipedia-{lang}",
             )
-        except Exception:
+        except Exception as exc:
+            log_api_error("Wikipedia", "GET", url, detail=str(exc))
             return None
         finally:
             if should_close:
@@ -72,12 +76,14 @@ class KnowledgeSearchConnector:
 
         client = self._http_client or httpx.Client(timeout=self.timeout_seconds)
         should_close = self._http_client is None
+        ddg_url = "https://api.duckduckgo.com/"
         try:
             resp = client.get(
-                "https://api.duckduckgo.com/",
+                ddg_url,
                 params={"q": cleaned, "format": "json", "no_html": 1, "skip_disambig": 1},
             )
             if resp.status_code != 200:
+                log_api_error("DuckDuckGo", "GET", ddg_url, status_code=resp.status_code, detail=resp.text)
                 return []
             data = resp.json()
             hits: List[SearchHit] = []
@@ -102,7 +108,8 @@ class KnowledgeSearchConnector:
                         )
                     )
             return hits
-        except Exception:
+        except Exception as exc:
+            log_api_error("DuckDuckGo", "GET", ddg_url, detail=str(exc))
             return []
         finally:
             if should_close:

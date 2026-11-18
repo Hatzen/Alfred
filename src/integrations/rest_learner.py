@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from src.memory.store import MemoryStore, SkillDefinition
+from src.providers.localai import log_api_error
 
 _LEARN_PATTERN = re.compile(
     r"(?:lerne\s+(?:api|skill)|learn\s+(?:api|skill))\s+"
@@ -116,6 +117,14 @@ class RESTSkillLearner:
                 kwargs["params"] = args
 
             resp = client.request(skill.http_method, url, **kwargs)
+            if not (200 <= resp.status_code < 300):
+                log_api_error(
+                    f"Skill:{skill.name}",
+                    skill.http_method,
+                    url,
+                    status_code=resp.status_code,
+                    detail=resp.text,
+                )
             parsed_data: Any = None
             try:
                 parsed_data = resp.json()
@@ -131,6 +140,7 @@ class RESTSkillLearner:
                 data=parsed_data,
             )
         except Exception as exc:
+            log_api_error(f"Skill:{skill.name}", skill.http_method, url, detail=str(exc))
             return SkillExecutionResult(
                 skill_name=skill.name,
                 ok=False,

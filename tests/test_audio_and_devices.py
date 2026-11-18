@@ -169,3 +169,34 @@ def test_parse_alsa_list_extracts_linux_hardware_ids() -> None:
         ("plughw:2,3", "HDA NVIDIA - HDMI 0"),
     ]
 
+
+def test_parse_alsa_list_handles_german_locale_and_konftel_ego_smart_priority() -> None:
+    german_sample = (
+        "**** Liste der Hardware-Geräte (CAPTURE) ****\n"
+        "Karte 0: PCH [HDA Intel PCH], Gerät 0: ALC256 Analog [ALC256 Analog]\n"
+        "Karte 1: Ego [Konftel Ego], Gerät 0: USB Audio [USB Audio]\n"
+    )
+    parsed = _parse_alsa_list(german_sample)
+    assert parsed == [
+        ("plughw:0,0", "HDA Intel PCH - ALC256 Analog"),
+        ("plughw:1,0", "Konftel Ego - USB Audio"),
+    ]
+
+    # When both onboard mic and Konftel Ego are quiet during ambient probe, Konftel Ego wins
+    onboard = AudioInputDevice(
+        device_id="alsa-in-0",
+        name="HDA Intel PCH - ALC256 Analog",
+        probe_pcm=generate_pcm_tone(100.0, 40, amplitude=0.002),
+    )
+    konftel = AudioInputDevice(
+        device_id="alsa-in-1",
+        name="Konftel Ego - USB Audio",
+        probe_pcm=generate_pcm_tone(100.0, 40, amplitude=0.002),
+    )
+    mgr = AudioDeviceManager(input_devices=[onboard, konftel], simulation_mode=True)
+    chosen = mgr.select_smart_microphone()
+    assert chosen is not None
+    assert chosen.device_id == "alsa-in-1"
+    wav_bytes = mgr.record_active_microphone_wav(duration_ms=100)
+    assert wav_bytes is not None and wav_bytes[:4] == b"RIFF"
+

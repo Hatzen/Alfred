@@ -7,6 +7,8 @@ from typing import List, Optional
 
 import httpx
 
+from src.providers.localai import log_api_error
+
 _SENSITIVE_DOC_TERMS = ("steuer", "tax", "gehalt", "salary", "lohn", "iban", "bank", "vertrag")
 
 
@@ -42,9 +44,10 @@ class PaperlessConnector:
         headers = {"Authorization": f"Token {self.api_token}"} if self.api_token else {}
         client = self._http_client or httpx.Client(timeout=self.timeout_seconds)
         should_close = self._http_client is None
+        url = f"{self.base_url}/api/documents/"
         try:
             resp = client.get(
-                f"{self.base_url}/api/documents/",
+                url,
                 params={"query": query, "page_size": limit},
                 headers=headers,
             )
@@ -67,7 +70,8 @@ class PaperlessConnector:
                     )
                 )
             return hits
-        except Exception:
+        except Exception as exc:
+            log_api_error("Paperless", "GET", url, detail=str(exc))
             return []
         finally:
             if should_close:

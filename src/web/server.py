@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import psutil
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -70,6 +71,32 @@ class DeviceSelectRequest(BaseModel):
 
     input_device_id: Optional[str] = None
     output_device_id: Optional[str] = None
+
+
+class VoiceAudioCommandRequest(BaseModel):
+    """Base64-encoded WAV recording from browser microphone for LocalAI STT."""
+
+    audio_base64: str
+    require_wake_word: bool = False
+    passphrase: Optional[str] = None
+    language: Optional[str] = None
+
+
+class HostListenRequest(BaseModel):
+    """Request to capture audio directly from the server's active microphone."""
+
+    duration_ms: int = Field(default=3000, ge=200, le=15000)
+    require_wake_word: bool = False
+    passphrase: Optional[str] = None
+    language: Optional[str] = None
+
+
+class TTSAudioRequest(BaseModel):
+    """Request to synthesize speech WAV audio via LocalAI TTS (or fallback tone)."""
+
+    text: str
+    language: Optional[str] = None
+    voice: Optional[str] = None
 
 
 class HermesWebhookRequest(BaseModel):
@@ -196,10 +223,12 @@ def create_app(assistant: Optional[AlfredAssistant] = None) -> FastAPI:
 
     @app.get("/api/devices")
     async def get_devices() -> Dict[str, Any]:
+        bot.device_manager.refresh_devices()
         return bot.device_manager.snapshot()
 
     @app.post("/api/devices/smart-select")
     async def smart_select_devices() -> Dict[str, Any]:
+        bot.device_manager.refresh_devices()
         mic = bot.device_manager.select_smart_microphone()
         soundcheck = bot.device_manager.select_smart_output_device()
         return {
@@ -214,6 +243,73 @@ def create_app(assistant: Optional[AlfredAssistant] = None) -> FastAPI:
             },
             "snapshot": bot.device_manager.snapshot(),
         }
+
+    async def _handle_voice_wav(
+        wav_bytes: bytes,
+        *,
+        require_wake_word: bool,
+        passphrase: Optional[str],
+        language: Optional[str],
+    ) -> Dict[str, Any]:
+        lang = language or bot.config.default_language
+        stt = bot.localai_client.transcribe_audio(wav_bytes, language=lang)
+        if not stt.text:
+            return {
+                "transcription": "",
+                "stt_provider": stt.provider,
+                "assistant": None,
+                "error": "No speech transcribed (verify LocalAI STT model or speak louder).",
+            }
+        res = bot.process_input(
+            stt.text,
+            require_wake_word=require_wake_word,
+            explicit_passphrase=passphrase,
+            language_override=language,
+        )
+        payload = _serialize_response(res)
+        await hub.broadcast({"type": "command_result", "data": payload})
+        return {
+            "transcription": stt.text,
+            "stt_provider": stt.provider,
+            "assistant": payload,
+        }
+
+    @app.post("/api/voice/command")
+    async def voice_command(req: VoiceAudioCommandRequest) -> Dict[str, Any]:
+        try:
+            raw_b64 = req.audio_base64.split(",", 1)[-1].strip()
+            wav_bytes = base64.b64decode(raw_b64)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid base64 audio payload: {exc}") from exc
+
+        return await _handle_voice_wav(
+            wav_bytes,
+            require_wake_word=req.require_wake_word,
+            passphrase=req.passphrase,
+            language=req.language,
+        )
+
+    @app.post("/api/voice/listen-host")
+    async def listen_host_mic(req: HostListenRequest = HostListenRequest()) -> Dict[str, Any]:
+        bot.device_manager.refresh_devices()
+        wav_bytes = bot.device_manager.record_active_microphone_wav(duration_ms=req.duration_ms)
+        if not wav_bytes:
+            raise HTTPException(status_code=503, detail="No active host microphone audio captured.")
+        return await _handle_voice_wav(
+            wav_bytes,
+            require_wake_word=req.require_wake_word,
+            passphrase=req.passphrase,
+            language=req.language,
+        )
+
+    @app.post("/api/tts/audio")
+    async def synthesize_tts_audio(req: TTSAudioRequest) -> Response:
+        speech = bot.localai_client.synthesize_speech(req.text, voice=req.voice)
+        return Response(
+            content=speech.audio_bytes,
+            media_type="audio/wav",
+            headers={"X-Alfred-TTS-Provider": speech.provider},
+        )
 
     @app.post("/api/devices/soundcheck")
     async def run_soundcheck() -> Dict[str, Any]:
@@ -372,6 +468,10 @@ def create_app(assistant: Optional[AlfredAssistant] = None) -> FastAPI:
             "assistant_response": _serialize_response(res),
             "hermes_tts": tts_msg,
         }
+
+    @app.get("/api/providers/health")
+    async def get_providers_health() -> Dict[str, Any]:
+        return bot.localai_client.health_report()
 
     @app.get("/api/security/passphrase-hint")
     async def get_passphrase_hint() -> Dict[str, Any]:

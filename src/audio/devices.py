@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import ctypes
+import io
+import os
 import re
 import shutil
 import subprocess
 import sys
 import time
+import wave
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -153,9 +156,45 @@ def _default_output_devices() -> List[AudioOutputDevice]:
 
 
 _ALSA_LINE_RE = re.compile(
-    r"card\s+(?P<card>\d+):\s*[^\[]*\[(?P<card_name>[^\]]+)\],\s*device\s+(?P<dev>\d+):\s*[^\[]*\[(?P<dev_name>[^\]]+)\]",
+    r"(?:card|karte)\s+(?P<card>\d+):\s*[^\[]*\[(?P<card_name>[^\]]+)\],\s*(?:device|gerät|geraet)\s+(?P<dev>\d+):\s*[^\[]*\[(?P<dev_name>[^\]]+)\]",
     re.IGNORECASE,
 )
+
+_PREFERRED_INPUT_KEYWORDS = (
+    "konftel",
+    "ego",
+    "conference",
+    "speakerphone",
+    "jabra",
+    "poly",
+    "yealink",
+    "headset",
+    "usb",
+)
+
+_PREFERRED_OUTPUT_KEYWORDS = (
+    "konftel",
+    "ego",
+    "conference",
+    "speakerphone",
+    "jabra",
+)
+
+
+def _matches_keywords(name: str, keywords: tuple) -> bool:
+    lowered = (name or "").lower()
+    return any(kw in lowered for kw in keywords)
+
+
+def pcm_to_wav_bytes(pcm_bytes: bytes, sample_rate: int = 16000) -> bytes:
+    """Wrap raw mono 16-bit little-endian PCM frames in a standard RIFF WAV container."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_bytes)
+    return buf.getvalue()
 
 
 def _parse_alsa_list(output: str) -> List[tuple]:
@@ -188,8 +227,9 @@ def _discover_linux_input_devices() -> List[AudioInputDevice]:
     entries: List[tuple] = []
     if shutil.which("arecord"):
         try:
+            env = {**os.environ, "LC_ALL": "C"}
             proc = subprocess.run(
-                ["arecord", "-l"], capture_output=True, text=True, timeout=2.0, check=False
+                ["arecord", "-l"], capture_output=True, text=True, timeout=2.0, check=False, env=env
             )
             entries = _parse_alsa_list(proc.stdout)
         except Exception:
@@ -213,8 +253,9 @@ def _discover_linux_output_devices() -> List[AudioOutputDevice]:
     entries: List[tuple] = []
     if shutil.which("aplay"):
         try:
+            env = {**os.environ, "LC_ALL": "C"}
             proc = subprocess.run(
-                ["aplay", "-l"], capture_output=True, text=True, timeout=2.0, check=False
+                ["aplay", "-l"], capture_output=True, text=True, timeout=2.0, check=False, env=env
             )
             entries = _parse_alsa_list(proc.stdout)
         except Exception:
@@ -387,6 +428,8 @@ class AudioDeviceManager:
     ) -> None:
         self.sound_engine = sound_engine or FeedbackSoundEngine(enabled=True)
         self.simulation_mode = simulation_mode
+        self._custom_inputs_injected = input_devices is not None
+        self._custom_outputs_injected = output_devices is not None
         if input_devices is not None:
             self.input_devices = list(input_devices)
         elif simulation_mode:
@@ -405,6 +448,19 @@ class AudioDeviceManager:
         self.active_input_id: Optional[str] = configured_input_id
         self.active_output_id: Optional[str] = configured_output_id
         self._output_probe_fn = output_probe_fn
+
+    def refresh_devices(self) -> None:
+        """Re-scan host audio endpoints so newly plugged USB mics/speakers appear."""
+        if self.simulation_mode:
+            return
+        if not self._custom_inputs_injected:
+            self.input_devices = discover_host_input_devices()
+            if self.active_input_id and not any(d.device_id == self.active_input_id for d in self.input_devices):
+                self.active_input_id = None
+        if not self._custom_outputs_injected:
+            self.output_devices = discover_host_output_devices()
+            if self.active_output_id and not any(d.device_id == self.active_output_id for d in self.output_devices):
+                self.active_output_id = None
 
     def set_input_device(self, device_id: str) -> AudioInputDevice:
         """Manually pin a specific microphone device by ID."""
@@ -447,7 +503,8 @@ class AudioDeviceManager:
             dev.last_snr_db = round(snr, 2)
 
             active_bonus = 10.0 if rms >= min_active_rms else 0.0
-            score = active_bonus + snr
+            preferred_hw_bonus = 3.0 if _matches_keywords(dev.name, _PREFERRED_INPUT_KEYWORDS) else 0.0
+            score = active_bonus + preferred_hw_bonus + snr
             if score > best_score:
                 best_score = score
                 best_device = dev
@@ -455,6 +512,28 @@ class AudioDeviceManager:
         if best_device is not None:
             self.active_input_id = best_device.device_id
         return best_device
+
+    def record_active_microphone_wav(self, duration_ms: int = 3000) -> Optional[bytes]:
+        """Record mono 16kHz 16-bit WAV audio from the active host microphone."""
+        dev = next((d for d in self.input_devices if d.device_id == self.active_input_id), None)
+        if dev is None:
+            dev = self.select_smart_microphone()
+        if dev is None:
+            return None
+
+        if self.simulation_mode:
+            pcm = dev.probe_pcm or generate_pcm_tone(280.0, min(duration_ms, 250), amplitude=0.25)
+            return pcm_to_wav_bytes(pcm, sample_rate=dev.sample_rate)
+
+        pcm: Optional[bytes] = None
+        if dev.winmm_index is not None:
+            pcm = capture_winmm_pcm(dev.winmm_index, duration_ms=duration_ms, sample_rate=dev.sample_rate)
+        elif dev.alsa_device is not None:
+            pcm = capture_alsa_pcm(dev.alsa_device, duration_ms=duration_ms, sample_rate=dev.sample_rate)
+        elif dev.probe_pcm is not None:
+            pcm = dev.probe_pcm
+
+        return pcm_to_wav_bytes(pcm, sample_rate=dev.sample_rate) if pcm else None
 
     def run_soundcheck(self) -> SoundcheckResult:
         """Send the specific soundcheck tone to candidate outputs and pick the best working one."""
@@ -472,7 +551,9 @@ class AudioDeviceManager:
             if self._output_probe_fn is not None:
                 score = self._output_probe_fn(dev, soundcheck_wav)
             else:
-                score = dev.loopback_quality if dev.can_open_stream else 0.0
+                base = dev.loopback_quality if dev.can_open_stream else 0.0
+                bonus = 0.05 if (dev.can_open_stream and _matches_keywords(dev.name, _PREFERRED_OUTPUT_KEYWORDS)) else 0.0
+                score = min(1.0, base + bonus)
 
             dev.last_soundcheck_score = round(score, 3)
             if score > best_score:

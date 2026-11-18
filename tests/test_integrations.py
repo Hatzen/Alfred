@@ -236,3 +236,60 @@ def test_dotenv_loader_and_nvidia_spark_localai_model_config(tmp_path) -> None:
     client.detect_voice_activity(b"\x00\x00" * 50)
     assert seen_models == {"tts": "piper-de-thorsten", "vad": "silero-vad"}
 
+
+def test_localai_url_normalization_model_discovery_and_stdout_error_logging(capsys) -> None:
+    import json
+
+    seen_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_urls.append(str(request.url))
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={"data": [{"id": "loaded-hermes-chat"}, {"id": "whisper-1"}, {"id": "piper-de"}]},
+            )
+        if request.url.path == "/v1/chat/completions":
+            body = json.loads(request.content.decode("utf-8"))
+            if body.get("model") == "loaded-hermes-chat":
+                return httpx.Response(
+                    200,
+                    json={"model": "loaded-hermes-chat", "choices": [{"message": {"content": "Servus!"}}]},
+                )
+            return httpx.Response(404, json={"error": {"message": "model not found"}})
+        if request.url.path == "/v1/audio/speech":
+            return httpx.Response(404, text="speech route unavailable")
+        if request.url.path == "/tts":
+            return httpx.Response(200, content=b"RIFFnative-tts")
+        if request.url.path == "/vad":
+            return httpx.Response(200, json={"is_speech": True})
+        return httpx.Response(404, text="not found")
+
+    # Pass base URL WITHOUT '/v1' to verify automatic normalization
+    client = LocalAIClient(
+        localai_base_url="http://spark.local:8080",
+        chat_model="missing-model-name",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    assert client.root_url == "http://spark.local:8080"
+    assert client.v1_url == "http://spark.local:8080/v1"
+
+    chat = client.chat_completion([{"role": "user", "content": "Hallo"}], language="de")
+    assert chat.provider == "localai"
+    assert chat.model == "loaded-hermes-chat"
+    assert chat.content == "Servus!"
+
+    tts = client.synthesize_speech("Hallo")
+    assert tts.provider == "localai-tts"
+    assert tts.audio_bytes == b"RIFFnative-tts"
+
+    vad = client.detect_voice_activity(b"\x01\x00" * 40)
+    assert vad.provider == "localai-vad"
+    assert vad.is_speech is True
+    assert "http://spark.local:8080/vad" in seen_urls
+
+    captured = capsys.readouterr().out
+    assert "[Alfred][API-ERROR]" in captured
+    assert "HTTP 404" in captured
+    assert "http://spark.local:8080/v1/chat/completions" in captured
+

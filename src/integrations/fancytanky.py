@@ -6,6 +6,8 @@ from typing import Any, Dict, Optional
 
 import httpx
 
+from src.providers.localai import log_api_error
+
 
 class FancyTankyConnector:
     """Communicates with a local FancyTanky tracked tank robot REST server."""
@@ -38,11 +40,13 @@ class FancyTankyConnector:
     def _request(self, method: str, path: str, json_body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         client = self._http_client or httpx.Client(timeout=self.timeout_seconds)
         should_close = self._http_client is None
+        url = f"{self.base_url}{path}"
         try:
-            resp = client.request(method, f"{self.base_url}{path}", json=json_body)
+            resp = client.request(method, url, json=json_body)
             resp.raise_for_status()
             return {"ok": True, "source": "fancytanky-live", "data": resp.json()}
         except Exception as exc:
+            log_api_error("FancyTanky", method, url, detail=str(exc))
             return {
                 "ok": False,
                 "source": "fancytanky-sim",

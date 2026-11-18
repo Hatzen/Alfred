@@ -143,6 +143,7 @@ class AlfredAssistant:
             vad_model=self.config.localai_vad_model,
             ollama_base_url=self.config.ollama_base_url,
             ollama_model=self.config.ollama_model,
+            timeout_seconds=self.config.http_timeout_seconds,
             local_vad=self.vad,
         )
         self.fancytanky = fancytanky or FancyTankyConnector(base_url=self.config.fancytanky_url)

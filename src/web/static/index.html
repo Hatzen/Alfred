@@ -25,7 +25,7 @@
         <div class="row">
           <input id="cmd-input" type="text" placeholder="Hey Alfred, was ist meine Steuernummer? / Merke dir: Kaffee = schwarz" />
           <input id="passphrase-input" type="password" placeholder="Weekday Passphrase (optional)" />
-          <button id="mic-btn" class="btn" title="Browser Microphone Voice Input">🎤 Voice Mic</button>
+          <button id="mic-btn" class="btn" title="Record from selected Microphone (LocalAI STT)">🎤 Voice Mic</button>
           <button id="send-btn" class="btn btn-primary">Send</button>
         </div>
         <div class="options-row">
@@ -36,15 +36,25 @@
             <option value="en">English (en)</option>
           </select>
         </div>
+        <div id="mic-context-hint" class="hint-banner" style="display:none;"></div>
         <div id="chat-log" class="log-box"></div>
       </section>
 
       <section class="glass card">
-        <h2>Smart Audio &amp; Beeps</h2>
+        <h2>Smart Audio, Devices &amp; Beeps</h2>
         <div class="meta" id="audio-status">Loading audio devices...</div>
+        <div class="field-group">
+          <label for="mic-select">Microphone (Input)</label>
+          <select id="mic-select"></select>
+        </div>
+        <div class="field-group">
+          <label for="speaker-select">Speaker (Output)</label>
+          <select id="speaker-select"></select>
+        </div>
         <div class="row">
-          <button id="smart-audio-btn" class="btn">Smart Select Mic &amp; Speaker</button>
-          <button id="soundcheck-btn" class="btn">Run Soundcheck</button>
+          <button id="refresh-devices-btn" class="btn">🔄 Refresh Devices</button>
+          <button id="smart-audio-btn" class="btn">Smart Select</button>
+          <button id="soundcheck-btn" class="btn">Soundcheck</button>
         </div>
       </section>
 
@@ -71,4 +81,3 @@
   <script src="/static/app.js"></script>
 </body>
 </html>
-

@@ -6,6 +6,8 @@ from src.providers.localai import (
     SpeechResult,
     TranscriptionResult,
     VADEndpointResult,
+    log_api_error,
+    log_api_info,
 )
 
 __all__ = [
@@ -14,5 +16,7 @@ __all__ = [
     "SpeechResult",
     "TranscriptionResult",
     "VADEndpointResult",
+    "log_api_error",
+    "log_api_info",
 ]
 

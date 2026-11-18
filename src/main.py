@@ -49,6 +49,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         simulation_mode=args.simulation,
     )
     assistant = AlfredAssistant(config=config)
+    if not config.simulation_mode:
+        health = assistant.localai_client.health_report()
+        print(
+            f"[Alfred][Startup] LocalAI v1={health['localai']['v1_url']} "
+            f"reachable={health['localai']['reachable']} models={health['localai']['available_models']} | "
+            f"Ollama reachable={health['ollama']['reachable']} models={health['ollama']['available_models']}",
+            flush=True,
+        )
     app = create_app(assistant=assistant)
     uvicorn.run(app, host=config.host, port=config.port)
 

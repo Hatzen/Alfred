@@ -168,6 +168,9 @@ class AlfredConfig(BaseModel):
     ollama_model: str = Field(
         default_factory=lambda: os.getenv("ALFRED_OLLAMA_MODEL", "qwen3.5:4b")
     )
+    http_timeout_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("ALFRED_HTTP_TIMEOUT", "30.0"))
+    )
     fancytanky_url: str = Field(
         default_factory=lambda: os.getenv("ALFRED_FANCYTANKY_URL", "http://localhost:8000")
     )
