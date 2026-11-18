@@ -99,12 +99,16 @@ class AlfredAssistant:
         rest_learner: Optional[RESTSkillLearner] = None,
     ) -> None:
         self.config = config or AlfredConfig()
-        self.sound_engine = sound_engine or FeedbackSoundEngine(enabled=True)
+        self.sound_engine = sound_engine or FeedbackSoundEngine(
+            enabled=True,
+            hardware_playback=not self.config.simulation_mode,
+        )
         self.device_manager = device_manager or AudioDeviceManager(
             sound_engine=self.sound_engine,
             smart_choice_enabled=self.config.smart_audio_enabled,
             configured_input_id=self.config.input_device_id,
             configured_output_id=self.config.output_device_id,
+            simulation_mode=self.config.simulation_mode,
         )
         self.vad = vad or LowCpuVAD()
         self.idle_throttle = idle_throttle or IdleLoopThrottle(
@@ -133,8 +137,12 @@ class AlfredAssistant:
             localai_base_url=self.config.localai_base_url,
             api_key=self.config.localai_api_key,
             chat_model=self.config.localai_chat_model,
+            stt_model=self.config.localai_stt_model,
+            tts_model=self.config.localai_tts_model,
             tts_voice=self.config.localai_tts_voice,
+            vad_model=self.config.localai_vad_model,
             ollama_base_url=self.config.ollama_base_url,
+            ollama_model=self.config.ollama_model,
             local_vad=self.vad,
         )
         self.fancytanky = fancytanky or FancyTankyConnector(base_url=self.config.fancytanky_url)

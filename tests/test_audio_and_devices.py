@@ -6,7 +6,14 @@ import io
 import wave
 
 from src.audio.beeps import BEEP_PROFILES, FeedbackSoundEngine
-from src.audio.devices import AudioDeviceManager, AudioInputDevice, AudioOutputDevice
+from src.audio.devices import (
+    AudioDeviceManager,
+    AudioInputDevice,
+    AudioOutputDevice,
+    _parse_alsa_list,
+    discover_host_input_devices,
+    discover_host_output_devices,
+)
 from src.audio.vad import IdleLoopThrottle, LowCpuVAD, VADState, generate_pcm_tone
 
 
@@ -138,4 +145,27 @@ def test_smart_output_soundcheck_selects_working_speaker_and_plays_sweep() -> No
     assert result.selected_device_id == "spk-best"
     assert mgr.active_output_id == "spk-best"
     assert sound_engine.history[-1].cue_name == "soundcheck"
+
+
+def test_host_audio_device_discovery_returns_valid_devices() -> None:
+    inputs = discover_host_input_devices()
+    outputs = discover_host_output_devices()
+
+    assert len(inputs) >= 1
+    assert len(outputs) >= 1
+    assert all(isinstance(d, AudioInputDevice) and d.name for d in inputs)
+    assert all(isinstance(d, AudioOutputDevice) and d.name for d in outputs)
+
+
+def test_parse_alsa_list_extracts_linux_hardware_ids() -> None:
+    sample = (
+        "**** List of CAPTURE Hardware Devices ****\n"
+        "card 1: Mic [USB Conference Mic], device 0: USB Audio [USB Audio]\n"
+        "card 2: NVIDIA [HDA NVIDIA], device 3: HDMI 0 [HDMI 0]\n"
+    )
+    parsed = _parse_alsa_list(sample)
+    assert parsed == [
+        ("plughw:1,0", "USB Conference Mic - USB Audio"),
+        ("plughw:2,3", "HDA NVIDIA - HDMI 0"),
+    ]
 

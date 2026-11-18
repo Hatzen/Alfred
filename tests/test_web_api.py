@@ -16,7 +16,12 @@ def _make_test_client() -> TestClient:
     monday = datetime(2026, 11, 16, 10, 0)
     validator = DynamicPassphraseValidator(base_word="Nilpferd", now_fn=lambda: monday)
     guard = SensitiveTopicGuard(validator=validator)
-    config = AlfredConfig(db_path=":memory:", default_language="de", passphrase_base="Nilpferd")
+    config = AlfredConfig(
+        db_path=":memory:",
+        default_language="de",
+        passphrase_base="Nilpferd",
+        simulation_mode=True,
+    )
     bot = AlfredAssistant(
         config=config,
         passphrase_validator=validator,

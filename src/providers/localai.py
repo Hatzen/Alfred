@@ -57,8 +57,12 @@ class LocalAIClient:
         localai_base_url: str = "http://localhost:8080/v1",
         api_key: str = "local-no-key-required",
         chat_model: str = "hermes-local",
+        stt_model: str = "whisper-1",
+        tts_model: str = "tts-1",
         tts_voice: str = "de-DE-thorsten-high",
+        vad_model: str = "silero-vad",
         ollama_base_url: str = "http://localhost:11434",
+        ollama_model: str = "qwen3.5:4b",
         timeout_seconds: float = 4.0,
         http_client: Optional[httpx.Client] = None,
         local_vad: Optional[LowCpuVAD] = None,
@@ -66,8 +70,12 @@ class LocalAIClient:
         self.localai_base_url = localai_base_url.rstrip("/")
         self.api_key = api_key
         self.chat_model = chat_model
+        self.stt_model = stt_model
+        self.tts_model = tts_model
         self.tts_voice = tts_voice
+        self.vad_model = vad_model
         self.ollama_base_url = ollama_base_url.rstrip("/")
+        self.ollama_model = ollama_model
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
         self._local_vad = local_vad or LowCpuVAD()
@@ -119,17 +127,28 @@ class LocalAIClient:
             if cancel_check is not None and cancel_check():
                 return ChatResult(content="", provider="cancelled", model=self.chat_model, cancelled=True)
 
-            # 2. Try local Ollama Chat API
+            # 2. Try local Ollama Chat API (configured model, then first available tag)
             try:
+                chosen_model = self.ollama_model
                 resp = client.post(
                     f"{self.ollama_base_url}/api/chat",
-                    json={"model": "gemma2:9b", "messages": messages, "stream": False},
+                    json={"model": chosen_model, "messages": messages, "stream": False},
                 )
+                if resp.status_code != 200:
+                    tags_resp = client.get(f"{self.ollama_base_url}/api/tags")
+                    if tags_resp.status_code == 200:
+                        models = tags_resp.json().get("models", [])
+                        if models and models[0].get("name"):
+                            chosen_model = models[0]["name"]
+                            resp = client.post(
+                                f"{self.ollama_base_url}/api/chat",
+                                json={"model": chosen_model, "messages": messages, "stream": False},
+                            )
                 if resp.status_code == 200:
                     data = resp.json()
                     content = data.get("message", {}).get("content", "").strip()
                     if content:
-                        return ChatResult(content=content, provider="ollama", model="gemma2:9b")
+                        return ChatResult(content=content, provider="ollama", model=chosen_model)
             except Exception:
                 pass
         finally:
@@ -165,7 +184,7 @@ class LocalAIClient:
             resp = client.post(
                 f"{self.localai_base_url}/audio/transcriptions",
                 headers=self._headers(),
-                data={"model": "whisper-1", "language": language},
+                data={"model": self.stt_model, "language": language},
                 files={"file": (filename, wav_bytes, "audio/wav")},
             )
             if resp.status_code == 200:
@@ -191,7 +210,7 @@ class LocalAIClient:
             resp = client.post(
                 f"{self.localai_base_url}/audio/speech",
                 headers=self._headers(),
-                json={"model": "tts-1", "input": text, "voice": chosen_voice},
+                json={"model": self.tts_model, "input": text, "voice": chosen_voice},
             )
             if resp.status_code == 200 and resp.content:
                 return SpeechResult(audio_bytes=resp.content, voice=chosen_voice, provider="localai-tts")
@@ -211,7 +230,7 @@ class LocalAIClient:
             resp = client.post(
                 f"{self.localai_base_url}/vad",
                 headers=self._headers(),
-                json={"sample_rate": 16000, "pcm_length": len(pcm_bytes)},
+                json={"model": self.vad_model, "sample_rate": 16000, "pcm_length": len(pcm_bytes)},
             )
             if resp.status_code == 200:
                 data = resp.json()

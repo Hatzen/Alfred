@@ -48,6 +48,32 @@ def test_localai_client_chat_stt_tts_and_vad_with_mock_transport() -> None:
     assert vad.is_speech is True
 
 
+def test_localai_falls_back_to_ollama_with_tag_auto_discovery() -> None:
+    import json
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api/tags"):
+            return httpx.Response(200, json={"models": [{"name": "qwen3.5:4b"}]})
+        if request.url.path.endswith("/api/chat"):
+            body = json.loads(request.content.decode("utf-8"))
+            if body.get("model") == "qwen3.5:4b":
+                return httpx.Response(200, json={"message": {"content": "Antwort von qwen3.5:4b"}})
+            return httpx.Response(404, json={"error": "model not found"})
+        return httpx.Response(503)
+
+    mock_http = httpx.Client(transport=httpx.MockTransport(handler))
+    client = LocalAIClient(
+        localai_base_url="http://localai.offline/v1",
+        ollama_base_url="http://ollama.test",
+        ollama_model="missing-model",
+        http_client=mock_http,
+    )
+    res = client.chat_completion([{"role": "user", "content": "Hallo"}], language="de")
+    assert res.provider == "ollama"
+    assert res.model == "qwen3.5:4b"
+    assert "qwen3.5:4b" in res.content
+
+
 def test_fancytanky_paperless_and_knowledge_search_connectors() -> None:
     def tank_handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/move":
@@ -145,4 +171,68 @@ def test_hermes_protocol_and_nous_tool_calling_plus_rest_skill_learner() -> None
     assert exec_res.ok is True
     assert "18" in exec_res.response_text
     store.close()
+
+
+def test_dotenv_loader_and_nvidia_spark_localai_model_config(tmp_path) -> None:
+    import json
+    import os
+    from src.config import AlfredConfig
+
+    env_file = tmp_path / ".env.spark"
+    env_file.write_text(
+        'ALFRED_SIMULATION=false\n'
+        'ALFRED_LOCALAI_URL="http://spark.local:8080/v1"\n'
+        'ALFRED_CHAT_MODEL=hermes-3-llama-3.1-8b\n'
+        'ALFRED_STT_MODEL=whisper-large-v3-turbo\n'
+        'ALFRED_TTS_MODEL=piper-de-thorsten\n'
+        'ALFRED_VAD_MODEL=silero-vad\n',
+        encoding="utf-8",
+    )
+    tracked_vars = (
+        "ALFRED_SIMULATION",
+        "ALFRED_LOCALAI_URL",
+        "ALFRED_CHAT_MODEL",
+        "ALFRED_STT_MODEL",
+        "ALFRED_TTS_MODEL",
+        "ALFRED_VAD_MODEL",
+    )
+    saved_env = {var: os.environ.get(var) for var in tracked_vars}
+    try:
+        for var in tracked_vars:
+            os.environ.pop(var, None)
+
+        cfg = AlfredConfig.from_env(str(env_file), override=True)
+        assert cfg.simulation_mode is False
+        assert cfg.localai_base_url == "http://spark.local:8080/v1"
+        assert cfg.localai_chat_model == "hermes-3-llama-3.1-8b"
+        assert cfg.localai_stt_model == "whisper-large-v3-turbo"
+        assert cfg.localai_tts_model == "piper-de-thorsten"
+        assert cfg.localai_vad_model == "silero-vad"
+    finally:
+        for var, old_val in saved_env.items():
+            if old_val is None:
+                os.environ.pop(var, None)
+            else:
+                os.environ[var] = old_val
+
+    seen_models = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/audio/speech"):
+            seen_models["tts"] = json.loads(request.content.decode("utf-8"))["model"]
+            return httpx.Response(200, content=b"RIFF")
+        if request.url.path.endswith("/vad"):
+            seen_models["vad"] = json.loads(request.content.decode("utf-8"))["model"]
+            return httpx.Response(200, json={"is_speech": False})
+        return httpx.Response(404)
+
+    client = LocalAIClient(
+        localai_base_url=cfg.localai_base_url,
+        tts_model=cfg.localai_tts_model,
+        vad_model=cfg.localai_vad_model,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    client.synthesize_speech("Hallo")
+    client.detect_voice_activity(b"\x00\x00" * 50)
+    assert seen_models == {"tts": "piper-de-thorsten", "vad": "silero-vad"}
 

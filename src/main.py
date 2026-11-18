@@ -15,17 +15,34 @@ from src.web.server import create_app
 def build_arg_parser() -> argparse.ArgumentParser:
     """Create CLI argument parser for starting the Alfred daemon."""
     parser = argparse.ArgumentParser(description="Start the Alfred AI Assistant daemon.")
-    parser.add_argument("--host", default="0.0.0.0", help="Bind host address")
-    parser.add_argument("--port", type=int, default=8020, help="HTTP/WebSocket server port")
-    parser.add_argument("--lang", default="de", choices=["de", "en"], help="Default language")
-    parser.add_argument("--simulation", action="store_true", help="Run with simulated hardware fallbacks")
+    parser.add_argument("--env-file", default=".env", help="Path to .env configuration file")
+    parser.add_argument("--host", default=None, help="Bind host address (overrides .env)")
+    parser.add_argument("--port", type=int, default=None, help="HTTP/WebSocket port (overrides .env)")
+    parser.add_argument("--lang", default=None, choices=["de", "en"], help="Default language (overrides .env)")
+
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--production",
+        dest="simulation",
+        action="store_false",
+        default=None,
+        help="Run with real host audio hardware & live backends (overrides ALFRED_SIMULATION)",
+    )
+    mode_group.add_argument(
+        "--simulation",
+        dest="simulation",
+        action="store_true",
+        help="Run with simulated hardware fallbacks (overrides ALFRED_SIMULATION)",
+    )
     return parser
 
 
 def main(argv: Optional[List[str]] = None) -> None:
     """Launch the FastAPI daemon server."""
     args = build_arg_parser().parse_args(argv)
-    config = AlfredConfig(
+    config = AlfredConfig.from_env(
+        env_file=args.env_file,
+        override=True,
         host=args.host,
         port=args.port,
         default_language=args.lang,
@@ -38,4 +55,3 @@ def main(argv: Optional[List[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
-

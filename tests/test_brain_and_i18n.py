@@ -14,7 +14,12 @@ from src.memory.store import MemoryStore
 
 def test_end_to_end_german_memory_personality_passphrase_and_interrupt() -> None:
     monday = datetime(2026, 11, 16, 10, 0)
-    config = AlfredConfig(db_path=":memory:", default_language="de", passphrase_base="Nilpferd")
+    config = AlfredConfig(
+        db_path=":memory:",
+        default_language="de",
+        passphrase_base="Nilpferd",
+        simulation_mode=True,
+    )
     bot = AlfredAssistant(config=config)
 
     # 1. Non-addressed chatter is ignored
@@ -70,7 +75,7 @@ def test_assistant_routes_fancytanky_and_english_prompts() -> None:
     def tank_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"ok": True, "direction": "left"})
 
-    config = AlfredConfig(db_path=":memory:", default_language="en")
+    config = AlfredConfig(db_path=":memory:", default_language="en", simulation_mode=True)
     tank = FancyTankyConnector(
         base_url="http://tank.test",
         http_client=httpx.Client(transport=httpx.MockTransport(tank_handler)),
@@ -90,7 +95,7 @@ def test_assistant_audio_frame_throttling_and_hermes_tool_call_dispatch() -> Non
     from src.providers.localai import LocalAIClient
 
     slept = []
-    config = AlfredConfig(db_path=":memory:", default_language="de")
+    config = AlfredConfig(db_path=":memory:", default_language="de", simulation_mode=True)
 
     def llm_handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/chat/completions"):

@@ -25,10 +25,12 @@
         <div class="row">
           <input id="cmd-input" type="text" placeholder="Hey Alfred, was ist meine Steuernummer? / Merke dir: Kaffee = schwarz" />
           <input id="passphrase-input" type="password" placeholder="Weekday Passphrase (optional)" />
+          <button id="mic-btn" class="btn" title="Browser Microphone Voice Input">🎤 Voice Mic</button>
           <button id="send-btn" class="btn btn-primary">Send</button>
         </div>
         <div class="options-row">
           <label><input id="wake-toggle" type="checkbox" checked /> Require Wake Word ("Hey Alfred", "Hey Alexa", "Hey Google")</label>
+          <label><input id="tts-toggle" type="checkbox" checked /> 🔊 Speak Replies (TTS)</label>
           <select id="lang-select">
             <option value="de">Deutsch (de)</option>
             <option value="en">English (en)</option>

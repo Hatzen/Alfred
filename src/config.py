@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -83,6 +83,45 @@ def _env_bool(env_name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on", "ja"}
 
 
+def load_dotenv_file(env_path: Optional[str] = ".env", *, override: bool = False) -> Dict[str, str]:
+    """Load key=value pairs from a .env file into os.environ without external deps."""
+    loaded: Dict[str, str] = {}
+    if not env_path:
+        return loaded
+
+    path = Path(env_path)
+    if not path.is_file():
+        return loaded
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+
+        loaded[key] = value
+        if override or key not in os.environ:
+            os.environ[key] = value
+
+    return loaded
+
+
 class AlfredConfig(BaseModel):
     """Runtime configuration for Alfred with environment variable overrides."""
 
@@ -111,11 +150,23 @@ class AlfredConfig(BaseModel):
     localai_chat_model: str = Field(
         default_factory=lambda: os.getenv("ALFRED_CHAT_MODEL", "hermes-local")
     )
+    localai_stt_model: str = Field(
+        default_factory=lambda: os.getenv("ALFRED_STT_MODEL", "whisper-1")
+    )
+    localai_tts_model: str = Field(
+        default_factory=lambda: os.getenv("ALFRED_TTS_MODEL", "tts-1")
+    )
     localai_tts_voice: str = Field(
         default_factory=lambda: os.getenv("ALFRED_TTS_VOICE", "de-DE-thorsten-high")
     )
+    localai_vad_model: str = Field(
+        default_factory=lambda: os.getenv("ALFRED_VAD_MODEL", "silero-vad")
+    )
     ollama_base_url: str = Field(
         default_factory=lambda: os.getenv("ALFRED_OLLAMA_URL", "http://localhost:11434")
+    )
+    ollama_model: str = Field(
+        default_factory=lambda: os.getenv("ALFRED_OLLAMA_MODEL", "qwen3.5:4b")
     )
     fancytanky_url: str = Field(
         default_factory=lambda: os.getenv("ALFRED_FANCYTANKY_URL", "http://localhost:8000")
@@ -158,4 +209,17 @@ class AlfredConfig(BaseModel):
     )
     host: str = Field(default_factory=lambda: os.getenv("ALFRED_HOST", "0.0.0.0"))
     port: int = Field(default_factory=lambda: int(os.getenv("ALFRED_PORT", "8020")))
+
+    @classmethod
+    def from_env(
+        cls,
+        env_file: Optional[str] = ".env",
+        *,
+        override: bool = False,
+        **overrides: Any,
+    ) -> "AlfredConfig":
+        """Load an optional .env file first, then instantiate AlfredConfig."""
+        load_dotenv_file(env_file, override=override)
+        filtered = {k: v for k, v in overrides.items() if v is not None}
+        return cls(**filtered)
 

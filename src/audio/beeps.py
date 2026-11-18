@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import io
 import math
+import shutil
 import struct
+import subprocess
+import sys
 import time
 import wave
 from dataclasses import dataclass, field
@@ -112,17 +115,33 @@ class FeedbackSoundEngine:
         if self._playback_hook is not None:
             self._playback_hook(wav_bytes, cue_name)
         elif self.hardware_playback:
-            self._play_windows_fallback(wav_bytes)
+            self._play_host_audio(wav_bytes)
 
         return event
 
     @staticmethod
-    def _play_windows_fallback(wav_bytes: bytes) -> None:
-        """Play WAV bytes asynchronously via Windows winsound when enabled on Windows."""
-        try:
-            import winsound  # type: ignore
+    def _play_host_audio(wav_bytes: bytes) -> None:
+        """Play WAV bytes asynchronously via winsound (Windows) or aplay (Linux)."""
+        if sys.platform == "win32":
+            try:
+                import winsound  # type: ignore
 
-            winsound.PlaySound(wav_bytes, winsound.SND_MEMORY | winsound.SND_ASYNC)
-        except Exception:
-            pass
+                winsound.PlaySound(wav_bytes, winsound.SND_MEMORY | winsound.SND_ASYNC)
+            except Exception:
+                pass
+            return
+
+        if sys.platform.startswith("linux") and shutil.which("aplay"):
+            try:
+                proc = subprocess.Popen(
+                    ["aplay", "-q", "-t", "wav", "-"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                if proc.stdin is not None:
+                    proc.stdin.write(wav_bytes)
+                    proc.stdin.close()
+            except Exception:
+                pass
 
