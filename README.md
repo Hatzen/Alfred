@@ -38,21 +38,57 @@ Privacy-first local AI Assistant daemon like Alexa — built for local execution
 
 ## Quickstart
 
-### 1. Production Mode (NVIDIA Spark + LocalAI / Windows / Linux)
+### 1. Prerequisites & Dependency Installation
 
-A ready-to-use profile is included in [.env.nvidia-spark](.env.nvidia-spark) (and copied to `.env`):
+Requires **Python 3.9+**. On Linux / **NVIDIA Spark**, install ALSA audio utilities (`arecord`, `aplay`) for host microphone/speaker discovery and feedback beeps:
 
 ```bash
-# Linux / NVIDIA Spark with LocalAI running on localhost:8080
-python -m src.main --env-file .env.nvidia-spark --production
+# Linux / Ubuntu / NVIDIA Spark audio tools
+sudo apt-get update && sudo apt-get install -y alsa-utils
+```
 
-# Or using the default .env file (ALFRED_SIMULATION=false)
-python -m src.main
+Clone the repo, create a virtual environment, and install dependencies:
+
+```bash
+git clone https://github.com/Hatzen/Alfred.git
+cd Alfred
+
+# Create & activate virtual environment (Linux / macOS)
+python3 -m venv .venv
+source .venv/bin/activate
+
+# On Windows PowerShell instead:
+# python -m venv .venv
+# .\.venv\Scripts\Activate.ps1
+
+# Install runtime dependencies (or `make install`)
+pip install -r requirements.txt
+
+# Optional: install test dependencies (pytest, pytest-asyncio) or `make dev-install`
+pip install -r requirements-dev.txt
+```
+
+### 2. Configure `.env` (NVIDIA Spark + LocalAI)
+
+Copy the NVIDIA Spark preset (or `.env.example`) to `.env` and adjust `ALFRED_PASSPHRASE_BASE` (do not keep `"Nilpferd"` in production) and your LocalAI model names:
+
+```bash
+cp .env.nvidia-spark .env
+```
+
+### 3. Production Mode (NVIDIA Spark + LocalAI / Windows / Linux)
+
+```bash
+# Launch with .env (ALFRED_SIMULATION=false)
+python -m src.main --production
+
+# Or pass a specific env file explicitly:
+python -m src.main --env-file .env.nvidia-spark --production
 ```
 
 Open `http://<spark-ip>:8020` (or `http://localhost:8020`) in your browser for the dashboard UI, including live **🎤 Voice Mic** and **🔊 Speak Replies (TTS)** controls.
 
-### 2. Simulation Mode (Headless Dev / CI without Audio Hardware)
+### 4. Simulation Mode (Headless Dev / CI without Audio Hardware)
 
 Simulation mode uses deterministic virtual audio devices and silent sound cues so you can test or develop on machines without microphones/speakers:
 
@@ -60,7 +96,7 @@ Simulation mode uses deterministic virtual audio devices and silent sound cues s
 python -m src.main --simulation --host 0.0.0.0 --port 8020 --lang de
 ```
 
-### 3. Run Automated Tests & Diagnostics
+### 5. Run Automated Tests & Diagnostics
 
 ```bash
 python -m pytest -v
